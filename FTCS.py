@@ -16,8 +16,6 @@ import math
 # T=600*3 #cas v sekundach
 T=600
 R=0.1 #polomer v metrech
-D=2*10**(-6) #tekute prostredi v m^2/s
-# D=3*10**(-7) #pevne prostredi v m^2/s
 c0=300 #pocatecni koncentrace v Bq/m^3
 
 # n=5*10**4
@@ -27,7 +25,7 @@ m=50
 tau=T/n
 h=R/m
 
-def test_stability():
+def test_stability(D):
     sigma=tau/h**2
     print("-------------------------------------------")
     print("TEST STABILITY")
@@ -42,9 +40,7 @@ def test_stability():
         print("Navyseni T muze tez zpusobit nestabilitu!")
         return False
 
-def make_matrix_FTCS():
-    #pp...pocatecni podminka
-    #op...okrajova podminka
+def make_matrix_FTCS(D):
     sigma=tau/h**2
     A=np.zeros((m+1,m+1))
     A[0,0]=1-6*D*sigma
@@ -56,22 +52,8 @@ def make_matrix_FTCS():
     A[m,m]=1
     return A
 
-
-def vypocet_FTCS(c):
+def vypocet_FTCS(c,D):
     start=time.time()
-    # j=np.linspace(0,m,num=m+1,dtype=int)
-    # def ulozeni_obrazku(c,t):
-        #MOC POMALE
-        # plt.cla()
-        # plt.clf()
-        # plt.close()
-        # plt.figure()
-        # plt.plot(j[0:-1]*h,c[0:-1])
-        # plt.grid()
-        # plt.xlabel('r [m]')
-        # plt.ylabel('c [Bq/m^3]')
-        # name='step'+str(t)+'.png'
-        # plt.savefig(name)
 
     # uloziste vysledku
     vysledek=np.zeros((n+1,m))
@@ -81,7 +63,7 @@ def vypocet_FTCS(c):
     # ulozeni_obrazku(c,0)
 
     #matice soustavy
-    A=make_matrix_FTCS()
+    A=make_matrix_FTCS(D)
 
     #vypocet
     for k in np.arange(1,n+1):
@@ -93,6 +75,40 @@ def vypocet_FTCS(c):
     print("Spotrebovany cas pro nalezeni numerickeho reseni: "+str(stop-start))
     return vysledek
 
+def make_matrix_CN(D):
+    sigma=tau/h**2
+    # A=np.zeros((m+1,m+1))
+    # A[0,0]=1-6*D*sigma
+    # A[0,1]=6*D*sigma
+    # for j in np.arange(1,m):
+        # A[j,j-1]=D*sigma*(1-1/j)
+        # A[j,j]=1-2*D*sigma
+        # A[j,j+1]=D*sigma*(1+1/j)
+    # A[m,m]=1
+    # return A
+
+def vypocet_CN(c,D):
+    start=time.time()
+
+    # uloziste vysledku
+    vysledek=np.zeros((n+1,m))
+    #DO VYSLEDKU SE OKR. PODM. NEUKLADA!!!
+
+    vysledek[0]=c[0:-1] #ulozeni pocatecni podminky
+    # ulozeni_obrazku(c,0)
+
+    #matice soustavy
+    A=make_matrix_FTCS(D)
+
+    #vypocet
+    for k in np.arange(1,n+1):
+        c=A.dot(c)
+        vysledek[k]=c[0:-1]
+        # ulozeni_obrazku(c,k)
+    stop=time.time()
+    print("-------------------------------------------")
+    print("Spotrebovany cas pro nalezeni numerickeho reseni: "+str(stop-start))
+    return vysledek
 
 def vykresleni(vysledek):
     plt.cla()
@@ -158,35 +174,99 @@ def animace(vysledek,op,interval=10**(-n),ulozit=False):
         anim.save('animace.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
     plt.show()
 
-def run(pp,interval_animace=10**(-n),ulozit_animace=False):
-    if test_stability():
+def animace_obe_D(vysledek,op,interval=10**(-n),ulozit=False):
+    # PRVNI MUSI BYT VZDY TEKUTE PROSTREDI (v promenne vysledek)
+    #TO DO:
+    #Proc se otevrou dve okna animaci???
+    a=vysledek[0]
+    b=vysledek[1]
+    j=np.linspace(0,m-1,num=m,dtype=int)
+    # plt.cla()
+    # plt.clf()
+    # plt.close()
+    fig, ax = plt.subplots()
+    ax = plt.axes(xlim=(0, 0.11), ylim=(-5,c0+50))
+    ax.grid()
+    plt.xlabel('$r$ [m]')
+    plt.ylabel('$c$ [Bq/m$^3$]')
+    # k=np.linspace(0,n,num=n+1,dtype=int)
+    ax.axvline(x=0.1, color='k')
+    line1, = ax.plot(j*h, a[0])
+    line2, = ax.plot(j*h, b[0])
+    ax.axhline(y=op,xmin=0.1/0.11,linestyle=':',linewidth=2)
+    text_min = ax.text(0.02,0.97, "", ha="left", va="center", transform=ax.transAxes)
+    text_sek = ax.text(0.02,0.94, "", ha="left", va="center", transform=ax.transAxes)
+
+    def prepocet(i):
+        s=np.array(i)*tau
+        return math.floor(s/60),s
+
+    def animate(i):
+        line1.set_ydata(a[i])  # update the data
+        line1.set_label('tekuté prostředí')
+        line2.set_ydata(b[i])  # update the data
+        line2.set_label('pevné prostředí')
+        # legend.remove()
+        legend = plt.legend(loc=9)
+        minuty,sekundy=prepocet(i)
+        text_min.set_text("$t=$ %.0f min" % minuty)
+        text_sek.set_text("$t=$ %.0f s" % sekundy)
+        return line1, line2, text_min, text_sek, legend
+
+    def init():
+        line1.set_ydata('')
+        line2.set_ydata('')
+        text_min.set_text('')
+        text_sek.set_text('')
+        return line1, line2, text_min, text_sek
+
+    anim = animation.FuncAnimation(fig, animate, np.arange(0, n+1), init_func=init,
+                                interval=interval, blit=True, repeat=False)
+    if ulozit:
+        anim.save('animace.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
+    plt.show()
+
+def run(pp,D,interval_animace=10**(-n),ulozit_animace=False):
+    if test_stability(D):
         start=time.time()
-        vysledek=vypocet_FTCS(pp)
-        animace(vysledek,pp[-1],interval_animace,ulozit=ulozit_animace)
+        vysledek=vypocet_FTCS(pp,D)
+        # animace(vysledek,pp[-1],interval=interval_animace,ulozit=ulozit_animace)
         # vykresleni(vysledek)
         stop=time.time()
         print("-------------------------------------------")
         print("Spotrebovany cas celkove: "+str(stop-start))
+        print()
         return vysledek
     else:
         return 0
 
 def main():
+    vysledek_celk=0
+    D_t=2*10**(-6) #tekute prostredi v m^2/s
+    D_p=3*10**(-7) #pevne prostredi v m^2/s
+
     #Uloha a)
     #pp
-    pp=np.zeros(m+1)
+    pp_a=np.zeros(m+1)
     #op
-    pp[-1]=c0
+    pp_a[-1]=c0
+    vysledek_tekute_a=run(pp_a,D_t)
+    vysledek_pevne_a=run(pp_a,D_p)
 
     #Uloha b)
     #pp
-    # pp=np.zeros(m+1)+c0
+    # pp_b=np.zeros(m+1)+c0
     #op
-    # pp[-1]=0
+    # pp_b[-1]=0
+    # vysledek_tekute_b=run(pp_b,D_t)
+    # vysledek_pevne_b=run(pp_b,D_p)
 
-    vysledek=run(pp)
-    # vysledek=run(pp,ulozit_animace=True)
-    return vysledek
+    # vysledek=run(pp,D,ulozit_animace=True)
+    vysledek_celk=[vysledek_tekute_a, vysledek_pevne_a]
+    animace_obe_D(vysledek_celk,pp_a[-1])
+    return vysledek_celk
+
+#TO DO: make_matrix_CN, vypocet_CN
 
 if __name__ == "__main__":
-    vysledek=main()
+    vysledek_celk=main()
