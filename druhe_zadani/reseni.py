@@ -1,9 +1,6 @@
 import numpy as np
-# from scipy.sparse import diags
-# import scipy
-# import scipy.linalg
-# import scipy.sparse
-# import scipy.sparse.linalg
+import scipy
+import scipy.sparse.linalg
 import matplotlib.pyplot as plt
 # from mpl_toolkits.mplot3d import Axes3D
 # from matplotlib.ticker import LinearLocator, FormatStrFormatter
@@ -14,16 +11,22 @@ import math
 # from astropy.units import dT
 
 # T=600*3 #cas v sekundach
-T=600
+T=10*600
+#po cca 300 min je to v rovnovaznem stavu
 R=0.1 #polomer v metrech
 c0=300 #pocatecni koncentrace v Bq/m^3
 
 # n=5*10**4
 # m=200
-n=1000
-m=50
+# n=2000
+# m=1000
+m=1000
+n=int(2/600*T*m)
 tau=T/n
 h=R/m
+sigma=tau/h**2
+
+prem_konst=math.log(2)/(3.8235*24*60*60)
 
 def test_stability(D):
     sigma=tau/h**2
@@ -75,84 +78,91 @@ def vypocet_FTCS(c,D):
     print("Spotrebovany cas pro nalezeni numerickeho reseni: "+str(stop-start))
     return vysledek
 
-def make_matrix_CN(D):
-    sigma=tau/h**2
-    # A=np.zeros((m+1,m+1))
-    # A[0,0]=1-6*D*sigma
-    # A[0,1]=6*D*sigma
-    # for j in np.arange(1,m):
-        # A[j,j-1]=D*sigma*(1-1/j)
-        # A[j,j]=1-2*D*sigma
-        # A[j,j+1]=D*sigma*(1+1/j)
-    # A[m,m]=1
-    # return A
 
-def vypocet_CN(c,D):
+def vypocet_CN(c,D,theta=1/2):
     start=time.time()
-
     # uloziste vysledku
     vysledek=np.zeros((n+1,m))
     #DO VYSLEDKU SE OKR. PODM. NEUKLADA!!!
-
     vysledek[0]=c[0:-1] #ulozeni pocatecni podminky
-    # ulozeni_obrazku(c,0)
 
-    #matice soustavy
-    A=make_matrix_FTCS(D)
+    j_array = np.linspace(0, m, m+1)
+    pom1=D*sigma*theta
+    pom2 = D*(1. - theta)
 
-    #vypocet
+    def make_matrix():
+        subDiag = np.zeros(m)
+        superDiag = np.zeros(m)
+        mainDiag = np.zeros(m+1)
+
+        mainDiag[0] = 1 + 6*pom1
+        # mainDiag[0] = 1 + 6*pom1 + tau*prem_konst*theta
+        superDiag[0] = -6*pom1
+
+        subDiag[:-1] = -pom1*(1 - 1/j_array[1:-1])
+        mainDiag[1:-1] = np.ones(m-1)*(1 + 2*pom1)
+        # mainDiag[1:-1] = np.ones(m-1)*(1 + 2*pom1 + tau*prem_konst*theta)
+        superDiag[1:] = -pom1*(1 + 1/j_array[1:-1])
+
+        mainDiag[-1]=1
+        return scipy.sparse.diags([subDiag, mainDiag, superDiag], [-1, 0, 1], format='csc')
+
+    A=make_matrix()
+
+    def jeden_krok(cOld):
+        """ Args:
+                cOld(array): The entire solution vector for the previous timestep, n.
+
+            Returns:
+                cNew(array): solution at timestep n+1
+        """
+        PS = np.zeros(m+1)
+        PS[0] = (1 - 6*pom2*sigma)*cOld[0] + 6*pom2*sigma*cOld[1]
+        # PS[0] = (1 - 6*pom2*sigma - tau*prem_konst*(1-theta))*cOld[0] + 6*pom2*sigma*cOld[1]
+
+        a = pom2*sigma*(1 - 1./(j_array[1:-1]))*cOld[:-2]
+        b = (1 - 2*pom2*sigma)*cOld[1:-1]
+        # b = (1 - 2*pom2*sigma - tau*prem_konst*(1-theta))*cOld[1:-1]
+        c = pom2*sigma*(1 + 1/(j_array[1:-1]))*cOld[2:]
+        PS[1:-1] = a + b + c
+
+        PS[-1]=cOld[-1]
+
+        cNew = scipy.sparse.linalg.spsolve(A, PS)
+        return cNew
+
     for k in np.arange(1,n+1):
-        c=A.dot(c)
+        # print(len(c))
+        c=jeden_krok(c)
+        # print(len(c))
         vysledek[k]=c[0:-1]
         # ulozeni_obrazku(c,k)
+
     stop=time.time()
     print("-------------------------------------------")
     print("Spotrebovany cas pro nalezeni numerickeho reseni: "+str(stop-start))
+    print("-------------------------------------------")
     return vysledek
 
-def vykresleni(vysledek):
-    plt.cla()
-    plt.clf()
-    plt.close()
-    k, j=np.linspace(0,n,num=n+1,dtype=int), np.linspace(0,m-1,num=m,dtype=int)
-    # print(len(vysledek[0,:]))
-    # print(len(j))
-    # print(j)
-    t, r=k*tau, j*h
-    t, r=np.meshgrid(t, r)
-    fig=plt.figure()
-    ax=fig.gca(projection='3d')
-
-    # surf=ax.plot_surface(t,r,np.transpose(vysledek), cmap=cm.coolwarm)
-    plt.ion()
-    surf=ax.plot_surface(t,r,np.transpose(vysledek))
-    plt.pause(0.0001)
-    ax.set_xlabel('t [s]')
-    ax.set_ylabel('r [m]')
-    ax.set_zlabel('c [Bq/m^3]')
-
-    # fig.colorbar(surf,shrink=0.5,aspect=5)
-    plt.ioff()
-
-def animace(vysledek,op,interval=10**(-n),ulozit=False):
+def animace(vysledek,op,interval=1,ulozit=False):
     j=np.linspace(0,m-1,num=m,dtype=int)
     # plt.cla()
     # plt.clf()
     # plt.close()
     fig, ax = plt.subplots()
-    ax = plt.axes(xlim=(0, 0.11), ylim=(-5,c0+50))
+    ax = plt.axes(xlim=(0, R+R/10), ylim=(-5,c0+50))
     ax.grid()
     plt.xlabel('$r$ [m]')
     plt.ylabel('$c$ [Bq/m$^3$]')
     # k=np.linspace(0,n,num=n+1,dtype=int)
     line, = ax.plot(j*h, vysledek[0],)
-    ax.axvline(x=0.1, color='k')
-    ax.axhline(y=op,xmin=0.1/0.11,linestyle=':',linewidth=2)
+    ax.axvline(x=R, color='k')
+    ax.axhline(y=op,xmin=0.1/0.11,linestyle=':',linewidth=2, color='r')
     text_min = ax.text(0.02,0.97, "", ha="left", va="center", transform=ax.transAxes)
     text_sek = ax.text(0.02,0.94, "", ha="left", va="center", transform=ax.transAxes)
 
     def prepocet(i):
-        s=np.array(i)*tau
+        s=i*tau
         return math.floor(s/60),s
 
     def animate(i):
@@ -174,7 +184,7 @@ def animace(vysledek,op,interval=10**(-n),ulozit=False):
         anim.save('animace.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
     plt.show()
 
-def animace_obe_D(vysledek,op,interval=10**(-n),ulozit=False):
+def animace_obe_D(vysledek,op,interval=1,ulozit=False):
     # PRVNI MUSI BYT VZDY TEKUTE PROSTREDI (v promenne vysledek)
     #TO DO:
     #Proc se otevrou dve okna animaci???
@@ -185,7 +195,7 @@ def animace_obe_D(vysledek,op,interval=10**(-n),ulozit=False):
     # plt.clf()
     # plt.close()
     fig, ax = plt.subplots()
-    ax = plt.axes(xlim=(0, 0.11), ylim=(-5,c0+50))
+    ax = plt.axes(xlim=(0, R+R/10), ylim=(-5,c0+50))
     ax.grid()
     plt.xlabel('$r$ [m]')
     plt.ylabel('$c$ [Bq/m$^3$]')
@@ -193,12 +203,12 @@ def animace_obe_D(vysledek,op,interval=10**(-n),ulozit=False):
     ax.axvline(x=0.1, color='k')
     line1, = ax.plot(j*h, a[0])
     line2, = ax.plot(j*h, b[0])
-    ax.axhline(y=op,xmin=0.1/0.11,linestyle=':',linewidth=2)
+    ax.axhline(y=op,xmin=0.1/0.11,linestyle=':',linewidth=2, color='r')
     text_min = ax.text(0.02,0.97, "", ha="left", va="center", transform=ax.transAxes)
     text_sek = ax.text(0.02,0.94, "", ha="left", va="center", transform=ax.transAxes)
 
     def prepocet(i):
-        s=np.array(i)*tau
+        s=i*tau
         return math.floor(s/60),s
 
     def animate(i):
@@ -226,7 +236,7 @@ def animace_obe_D(vysledek,op,interval=10**(-n),ulozit=False):
         anim.save('animace.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
     plt.show()
 
-def run(pp,D,interval_animace=10**(-n),ulozit_animace=False):
+def run_FTCS(pp,D,interval_animace=10**(-n),ulozit_animace=False):
     if test_stability(D):
         start=time.time()
         vysledek=vypocet_FTCS(pp,D)
@@ -238,10 +248,12 @@ def run(pp,D,interval_animace=10**(-n),ulozit_animace=False):
         print()
         return vysledek
     else:
+        print('SCHEMA NENI STABILNI, VIZ VYPIS VYSE!!!')
         return 0
 
 def main():
-    vysledek_celk=0
+    print("SPUSTENI PROGRAMU")
+    vysledek_celk=0 #bude matice, pokud probehne nejaky vypocet
     D_t=2*10**(-6) #tekute prostredi v m^2/s
     D_p=3*10**(-7) #pevne prostredi v m^2/s
 
@@ -250,23 +262,27 @@ def main():
     pp_a=np.zeros(m+1)
     #op
     pp_a[-1]=c0
-    vysledek_tekute_a=run(pp_a,D_t)
-    vysledek_pevne_a=run(pp_a,D_p)
+    # vysledek_tekute_a=run_FTCS(pp_a,D_t)
+    # vysledek_pevne_a=run_FTCS(pp_a,D_p)
+    vysledek_tekute_a=vypocet_CN(pp_a,D_t)
+    vysledek_pevne_a=vypocet_CN(pp_a,D_p)
 
     #Uloha b)
     #pp
-    # pp_b=np.zeros(m+1)+c0
+    pp_b=np.zeros(m+1)+c0
     #op
-    # pp_b[-1]=0
+    pp_b[-1]=0
     # vysledek_tekute_b=run(pp_b,D_t)
     # vysledek_pevne_b=run(pp_b,D_p)
 
-    # vysledek=run(pp,D,ulozit_animace=True)
     vysledek_celk=[vysledek_tekute_a, vysledek_pevne_a]
-    animace_obe_D(vysledek_celk,pp_a[-1])
+    animace_obe_D(vysledek_celk,pp_a[-1],interval=1)
+
+    #CN METODA
+    # vysledek_celk=vypocet_CN(pp_a,D_t)
+    # animace(vysledek_celk, pp_a[-1])
     return vysledek_celk
 
-#TO DO: make_matrix_CN, vypocet_CN
 
 if __name__ == "__main__":
     vysledek_celk=main()
