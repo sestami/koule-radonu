@@ -1,7 +1,7 @@
 """
-SPOUSTENI PROGRAMU: python resesi.py d h
+SPOUSTENI PROGRAMU: python resesi.py d l
 d je tloustka steny/membrany v intervalu (0,R]
-k je koeficient transportu v m/s
+l je koeficient transportu v m/s
 """
 import numpy as np
 import scipy
@@ -24,29 +24,34 @@ R=0.1 #polomer v metrech
 # R=10 #polomer v centimetrech
 c0=300 #pocatecni koncentrace v Bq/m^3
 
-# if len(sys.argv)>2:
-    # k=float(sys.argv[2])
-    # if float(sys.argv[1])<=R and float(sys.argv[1])>0:
-        # d=float(sys.argv[1]) #d\in(0;0.1]
-        # print("tloustka steny="+str(d))
-        # print("koeficient transportu="+str(k))
-    # else:
-        # print("Tloustka steny zadana mimo interval (0;R]!")
-        # print("Nyni nastavena na 0.01")
-        # print("R="+str(R))
-        # d=R/10
-# else:
-    # d=R/10
-    # k=0.5
-    # print("Nedostatecny pocet vstupnich argumentu!")
-    # print("Argumenty nastaveny na: d="+str(d)+"; k="+str(k))
+if len(sys.argv)>2:
+    l=float(sys.argv[2])
+    if float(sys.argv[1])<=R and float(sys.argv[1])>0:
+        d=float(sys.argv[1]) #d\in(0;0.1]
+        print("tloustka steny="+str(d))
+        print("koeficient transportu="+str(l))
+    else:
+        print("Tloustka steny zadana mimo interval (0;R]!")
+        print("Nyni nastavena na 0.01")
+        print("R="+str(R))
+        d=R/2
+else:
+    d=R/2
+    l=0.5
+    print("Nedostatecny pocet vstupnich argumentu!")
+    print("Argumenty nastaveny na: d="+str(d)+"; l="+str(l))
 
-d=R/2
-k=10**(-12)
+# d=R/2
+# l=10**(-12)
 
-m=100 #pocet bodu prostorove site
+#pristup na dalsich dvou radcich doladit
+# m_pouzite=100 #pocet bodu pouzite prostorove site
+# m=int(R/d*m_pouzite) #pocet bodu prostorove site
+
+m=200
 # n=int(8/600*T*m*np.log10(R/d*100000)) #pocet bodu casove site
 n=int(8/600*T*m*np.log10(R/d*10)) #pocet bodu casove site
+# n=1000
 tau=T/n #casovy krok
 h=R/m #prostorovy krok
 sigma=tau/h**2
@@ -56,7 +61,7 @@ j_array = np.linspace(j_d, m, m-j_d+1)
 
 prem_konst=math.log(2)/(3.8235*24*60*60)
 
-def vypocet_CN(c,D,theta=1/2,k=k):
+def vypocet_CN(c,D,theta=1/2):
     start=time.time()
 
     # uloziste vysledku
@@ -75,8 +80,9 @@ def vypocet_CN(c,D,theta=1/2,k=k):
 
         # mainDiag[0] = 1 + 6*pom1 + tau*prem_konst*theta
         # superDiag[0] = -6*pom1
-        mainDiag[0]= -D - h*k
-        superDiag[0]= D
+        #pred derivaci neni minus
+        mainDiag[0]= -1 - h*l/D
+        superDiag[0]= 1
 
         subDiag[:-1] = -pom1*(1 - 1/j_array[1:-1])
         # mainDiag[1:-1] = np.ones(m-1)*(1 + 2*pom1)
@@ -87,7 +93,6 @@ def vypocet_CN(c,D,theta=1/2,k=k):
         return scipy.sparse.diags([subDiag, mainDiag, superDiag], [-1, 0, 1], format='csc')
 
     A=make_matrix()
-    pdb.set_trace()
 
     def jeden_krok(c_uOld,cOld):
         """ Args:
@@ -98,11 +103,12 @@ def vypocet_CN(c,D,theta=1/2,k=k):
                 c_uNew(float): concentration inside the sphere at timestep n+1
                 cNew(array): solution at timestep n+1
         """
-        c_uNew=c_uOld*np.exp(-prem_konst*tau)+(k*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
+        c_uNew=c_uOld*np.exp(-prem_konst*tau)+(l*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
 
         PS = np.zeros(m-j_d+1)
         # PS[0] = (1 - 6*pom2*sigma - tau*prem_konst*(1-theta))*cOld[0] + 6*pom2*sigma*cOld[1]
-        PS[0]= -h*k*c_uNew
+        #pred derivaci neni minus
+        PS[0]= -h*l/D*c_uNew
 
         a = pom2*sigma*(1 - 1./(j_array[1:-1]))*cOld[:-2]
         b = (1 - 2*pom2*sigma - tau*prem_konst*(1-theta))*cOld[1:-1]
@@ -114,7 +120,6 @@ def vypocet_CN(c,D,theta=1/2,k=k):
         cNew = scipy.sparse.linalg.spsolve(A, PS)
         return c_uNew, cNew
 
-    # pdb.set_trace()
     for k in np.arange(1,n+1):
         # print(len(c))
         c_u[k], c=jeden_krok(c_u[k-1], c)
@@ -129,6 +134,9 @@ def vypocet_CN(c,D,theta=1/2,k=k):
     return c_u,vysledek
 
 def animace(vysledek,op,interval=1,ulozit=False):
+    '''
+    OPRAVIT!!! (kvuli zmenam, NEAKTUALNI)
+    '''
     j=np.linspace(0,m,num=m+1,dtype=int)
     # plt.cla()
     # plt.clf()
@@ -168,13 +176,12 @@ def animace(vysledek,op,interval=1,ulozit=False):
         anim.save('animace.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
     plt.show()
 
-def animace_obe_D(vysledek,op,interval=1,ulozit=False):
+def animace_obe_D(vysledek,c_u, op,interval=1,ulozit=False):
     # PRVNI MUSI BYT VZDY TEKUTE PROSTREDI (v promenne vysledek)
-    #TO DO:
-    #Proc se otevrou dve okna animaci???
-    # pdb.set_trace()
     a=vysledek[0]
     b=vysledek[1]
+    c_u1=c_u[0]
+    c_u2=c_u[1]
     # j=np.linspace(0,m,num=m+1,dtype=int)
     # plt.cla()
     # plt.clf()
@@ -186,11 +193,14 @@ def animace_obe_D(vysledek,op,interval=1,ulozit=False):
     plt.ylabel('$c$ [Bq/m$^3$]')
     # k=np.linspace(0,n,num=n+1,dtype=int)
     ax.axvline(x=R, color='k')
-    line1, = ax.plot(j_array*h, a[0])
-    line2, = ax.plot(j_array*h, b[0])
-    ax.axhline(y=op,xmin=0.1/0.11,linestyle=':',linewidth=2, color='r')
-    text_min = ax.text(0.02,0.97, "", ha="left", va="center", transform=ax.transAxes)
-    text_sek = ax.text(0.02,0.94, "", ha="left", va="center", transform=ax.transAxes)
+    ax.axvline(x=R-d, color='k')
+    line1, = ax.plot(j_array*h, a[0], 'b')
+    line2, = ax.plot(j_array*h, b[0], 'g')
+    ax.axhline(y=op,xmin=0.92,linestyle=':',linewidth=2, color='r')
+    line1_u=ax.axhline(y=c_u1[0],xmax=0.08,linestyle=':',linewidth=2, color='b')
+    line2_u=ax.axhline(y=c_u2[0],xmax=0.08,linestyle=':',linewidth=2, color='g')
+    text_min = ax.text(0.1,0.97, "", ha="left", va="center", transform=ax.transAxes)
+    text_sek = ax.text(0.1,0.94, "", ha="left", va="center", transform=ax.transAxes)
 
     def prepocet(i):
         s=i*tau
@@ -201,19 +211,23 @@ def animace_obe_D(vysledek,op,interval=1,ulozit=False):
         line1.set_label('tekuté prostředí')
         line2.set_ydata(b[i])  # update the data
         line2.set_label('pevné prostředí')
+        line1_u.set_ydata(c_u1[i])
+        line2_u.set_ydata(c_u2[i])
         # legend.remove()
         legend = plt.legend(loc=9)
         minuty,sekundy=prepocet(i)
         text_min.set_text("$t=$ %.0f min" % minuty)
         text_sek.set_text("$t=$ %.0f s" % sekundy)
-        return line1, line2, text_min, text_sek, legend
+        return line1, line2, line1_u, line2_u, text_min, text_sek, legend
 
     def init():
         line1.set_ydata('')
         line2.set_ydata('')
+        line1_u.set_ydata('')
+        line2_u.set_ydata('')
         text_min.set_text('')
         text_sek.set_text('')
-        return line1, line2, text_min, text_sek
+        return line1, line2, line1_u, line2_u, text_min, text_sek
 
     anim = animation.FuncAnimation(fig, animate, np.arange(0, n+1), init_func=init,
                                 interval=interval, blit=True, repeat=False)
@@ -249,7 +263,7 @@ def main():
     c_u_celk=[c_u_t, c_u_p]
     vysledek_celk=[vysledek_tekute_a, vysledek_pevne_a]
 
-    animace_obe_D(vysledek_celk,pp_a[-1],interval=200)
+    animace_obe_D(vysledek_celk,c_u_celk,pp_a[-1],interval=1)
 
     #CN METODA
     # vysledek_celk=vypocet_CN(pp_a,D_t)
