@@ -27,6 +27,7 @@ m=50
 tau=T/n
 h=R/m
 sigma=tau/h**2
+prem_konst=math.log(2)/(3.8235*24*60*60)
 
 def test_stability(D):
     sigma=tau/h**2
@@ -79,6 +80,71 @@ def vypocet_FTCS(c,D):
     return vysledek
 
 
+def vypocet_CN_ZALOHA_reseni_stena(c,D,theta=1/2):
+    start=time.time()
+    # uloziste vysledku
+    vysledek=np.zeros((n+1,m+1))
+    #DO VYSLEDKU SE OKR. PODM. UKLADA!!!
+    vysledek[0]=c[0:] #ulozeni pocatecni podminky
+
+    j_array = np.linspace(0, m, m+1)
+    pom1=D*sigma*theta
+    pom2 = D*(1. - theta)
+
+    def make_matrix():
+        subDiag = np.zeros(m)
+        superDiag = np.zeros(m)
+        mainDiag = np.zeros(m+1)
+
+        # mainDiag[0] = 1 + 6*pom1
+        mainDiag[0] = 1 + 6*pom1 + tau*prem_konst*theta
+        superDiag[0] = -6*pom1
+
+        subDiag[:-1] = -pom1*(1 - 1/j_array[1:-1])
+        # mainDiag[1:-1] = np.ones(m-1)*(1 + 2*pom1)
+        mainDiag[1:-1] = np.ones(m-1)*(1 + 2*pom1 + tau*prem_konst*theta)
+        superDiag[1:] = -pom1*(1 + 1/j_array[1:-1])
+
+        mainDiag[-1]=1
+        return scipy.sparse.diags([subDiag, mainDiag, superDiag], [-1, 0, 1], format='csc')
+
+    A=make_matrix()
+
+    def jeden_krok(cOld):
+        """ Args:
+                cOld(array): The entire solution vector for the previous timestep, n.
+
+            Returns:
+                cNew(array): solution at timestep n+1
+        """
+        PS = np.zeros(m+1)
+        # PS[0] = (1 - 6*pom2*sigma)*cOld[0] + 6*pom2*sigma*cOld[1]
+        PS[0] = (1 - 6*pom2*sigma - tau*prem_konst*(1-theta))*cOld[0] + 6*pom2*sigma*cOld[1]
+
+        a = pom2*sigma*(1 - 1./(j_array[1:-1]))*cOld[:-2]
+        # b = (1 - 2*pom2*sigma)*cOld[1:-1]
+        b = (1 - 2*pom2*sigma - tau*prem_konst*(1-theta))*cOld[1:-1]
+        c = pom2*sigma*(1 + 1/(j_array[1:-1]))*cOld[2:]
+        PS[1:-1] = a + b + c
+
+        PS[-1]=cOld[-1]
+
+        cNew = scipy.sparse.linalg.spsolve(A, PS)
+        return cNew
+
+    for k in np.arange(1,n+1):
+        # print(len(c))
+        c=jeden_krok(c)
+        # print(len(c))
+        vysledek[k]=c[0:]
+        # ulozeni_obrazku(c,k)
+
+    stop=time.time()
+    print("-------------------------------------------")
+    print("Spotrebovany cas pro nalezeni numerickeho reseni: "+str(stop-start))
+    print("-------------------------------------------")
+    return vysledek
+
 def vypocet_CN(c,D,theta=1/2):
     start=time.time()
     # uloziste vysledku
@@ -105,7 +171,7 @@ def vypocet_CN(c,D,theta=1/2):
 
         mainDiag[0] = 1 + 6*pom1
         superDiag[0] = -6*pom1
-        PS[0] = (1 - 6*pom2*sigma)*cOld[0] + 6*pom2*sigma*cOld[1]
+        PS[0] = (1 - 6*pom2*sigma - tau*prem_konst*(1-theta))*cOld[0] + 6*pom2*sigma*cOld[1]
 
         subDiag[:-1] = -pom1*(1 - 1/j_array[1:-1])
         mainDiag[1:-1] = np.ones(m-1)*(1 + 2*pom1)
