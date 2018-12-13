@@ -238,6 +238,7 @@ def animace_obe_D(vysledek,c_u, op,interval=1,ulozit=False):
 
 def main():
     print("\nSPUSTENI PROGRAMU")
+    start=time.time()
     vysledek_celk=0 #bude matice, pokud probehne dany vypocet
     c_u_celk=0 #bude vektor, pokud probehne dany vypocet
 
@@ -268,6 +269,8 @@ def main():
     #CN METODA
     # vysledek_celk=vypocet_CN(pp_a,D_t)
     # animace(vysledek_celk, pp_a[-1])
+    stop=time.time()
+    print('Spotrebovany cas celkove: '+str(stop-start))
     return c_u_celk, vysledek_celk
 
 
