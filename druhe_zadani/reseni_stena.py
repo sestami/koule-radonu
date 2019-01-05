@@ -55,7 +55,7 @@ print("Argumenty nastaveny na: d="+str(d)+"; k_u="+str(k_u)+"; k_v="+str(k_v))
 # m_pouzite=100 #pocet bodu pouzite prostorove site
 # m=int(R/d*m_pouzite) #pocet bodu prostorove site
 
-m=2000 #pocet bodu prostorove site
+m=200 #pocet bodu prostorove site
 # n=int(8/600*T*m*np.log10(R/d*100000)) #pocet bodu casove site
 # n=int(8/600*T*m*np.log10(R/d*10)+(300-c0)/1.5) #pocet bodu casove site
 n=2000 #pocet bodu casove site
@@ -64,7 +64,7 @@ h=R/m #prostorovy krok
 j_d=round((R-d)/R*m)
 j_array = np.linspace(j_d, m, m-j_d+1)
 
-def vypocet_CN(T,c,D,c_u=0,c_v=c0,smer="dovnitr",theta=1/2):
+def vypocet_CN(T,c,D,c_u=0,c_v=c0,tolerance=0.01,theta=1/2):
     '''
     Inputs:
         c(float): pocatecni podminka
@@ -135,10 +135,11 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,smer="dovnitr",theta=1/2):
                 c_uNew(float): concentration inside the sphere at timestep n+1
                 cNew(array): solution at timestep n+1
         """
-        if smer=="dovnitr":
-            c_uNew=c_uOld*np.exp(-prem_konst*tau)+(k_u*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
-        elif smer=="ven":
-            c_uNew=c_uOld*np.exp(-prem_konst*tau)+(k_u*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
+        c_uNew=c_uOld*np.exp(-prem_konst*tau)+(k_u*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
+        # if smer=="dovnitr":
+            # c_uNew=c_uOld*np.exp(-prem_konst*tau)+(k_u*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
+        # elif smer=="ven":
+            # c_uNew=c_uOld*np.exp(-prem_konst*tau)+(k_u*(cOld[0]-c_uOld)*3)/((R-d)*prem_konst)*(1-np.exp(-prem_konst*tau))
 
         PS = np.zeros(m-j_d+1)
         #VNITRNI OKRAJOVA PODMINKA
@@ -150,7 +151,6 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,smer="dovnitr",theta=1/2):
         b = (1 - 2*pom2*sigma - tau*prem_konst*(1-theta))*cOld[1:-1]
         c = pom2*sigma*(1 + 1/(j_array[1:-1]))*cOld[2:]
         PS[1:-1] = a + b + c
-
 
         #VNEJSI OKRAJOVA PODMINKA
         # PS[-1]=cOld[-1] #puvodni
@@ -164,7 +164,7 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,smer="dovnitr",theta=1/2):
         c_u_vysl[k], c=jeden_krok(c_u_vysl[k-1], c)
         vysledek[k]=c[0:]
         #KONTROLA, ZDALI KONCENTRACE UVNITR A VNE JSOU ROVNY V RAMCI TOLERANCE
-        if abs(c_v-c_u_vysl[k])<c0/100:
+        if abs(c_v-c_u_vysl[k])<c0*tolerance:
             t=k*tau
             break
         # ulozeni_obrazku(c,j)
@@ -174,7 +174,8 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,smer="dovnitr",theta=1/2):
     print("-------------------------------------------")
     print("Spotrebovany cas pro nalezeni numerickeho reseni: "+str(stop-start))
     print("-------------------------------------------")
-    return k,c_u_vysl,vysledek,tau
+    print("doba do ustaleni staleho stavu v ramci nastavene tolerance: "+str(k*tau)+" s")
+    return k,tau,c_u_vysl,vysledek
 
 def animace(vysledek,c_u, c_v,tau,k,prostredi,interval=1,ulozit=False):
     '''
@@ -306,62 +307,47 @@ def relaxacni_doba(D):
 def urcit_nove_pp(k,c_u,vysledek):
     pp=vysledek[k]
     c_u0=c_u[k]
+    return c_u0,pp
 
-def main():
-    '''
-    animace_obe_D NEPOUZIVAT!!!!!!!
-    '''
-    print("\nSPUSTENI PROGRAMU")
-    start=time.time()
+#SKRIPTOVA CAST
+'''
+animace_obe_D NEPOUZIVAT!!!!!!!
+'''
+print("\nSPUSTENI PROGRAMU")
+start=time.time()
 
-    print("\nRelaxacni doby:")
-    t_rel_t=relaxacni_doba(D_t)
-    t_rel_p=relaxacni_doba(D_p)
-    print("t_rel_tekute="+str(t_rel_t))
-    print("t_rel_pevne="+str(t_rel_p))
+print("\nRelaxacni doby:")
+t_rel_t=relaxacni_doba(D_t)
+t_rel_p=relaxacni_doba(D_p)
+print("t_rel_tekute="+str(t_rel_t))
+print("t_rel_pevne="+str(t_rel_p))
+T_t=round(30*t_rel_t) #cas v sekundach
+T_p=round(35*t_rel_p)
+pp=np.zeros(m-j_d+1)
+#Prvni cyklus=NAPLNOVANI
+k_t1,tau_t1,c_u_t1, vysledek_t1=vypocet_CN(T_t,pp,D_t,tolerance=0.01)
+k_p1,tau_p1,c_u_p1, vysledek_p1=vypocet_CN(T_p,pp,D_p,tolerance=0.01)
+animace(vysledek_t1,c_u_t1,c0,tau_t1,k_t1,'tekute', interval=1)
+animace(vysledek_p1,c_u_p1,c0,tau_p1,k_p1,'pevne', interval=1)
+#Urceni nove vnitrni okrajove podminky a pocatecni podminky
+c_u_t0,pp_t=urcit_nove_pp(k_t1,c_u_t1,vysledek_t1)
+c_u_p0,pp_p=urcit_nove_pp(k_p1,c_u_p1,vysledek_p1)
+#Druhy cyklus=VYPRAZDNOVANI
+k_t2,tau_t2,c_u_t2, vysledek_t2=vypocet_CN(T_t,pp_t,D_t,c_u=c_u_t0,c_v=0,tolerance=0.01)
+k_p2,tau_p2,c_u_p2, vysledek_p2=vypocet_CN(T_p,pp_p,D_p,c_u=c_u_p0,c_v=0,tolerance=0.01)
+animace(vysledek_t2,c_u_t2,0,tau_t2,k_t2,'tekute', interval=1)
+animace(vysledek_p2,c_u_p2,0,tau_p2,k_p2,'pevne', interval=1)
+#Vypocet hledanych dob
+t_t=k_t1*tau_t1+k_t2*tau_t2
+t_p=k_p1*tau_p1+k_p2*tau_p2
+# vysledek_celk_t=
+print("\nDoba experimentu pro tekute prostredi: "+str(t_t)+" s; "+str(round(t_t/60,3))+" min; "+str(round(t_t/3600,2))+" hod")
+print("Doba experimentu pro pevne prostredi: "+str(t_p)+" s; "+str(round(t_p/60,3))+" min; "+str(round(t_p/3600,2))+" hod")
 
-    T_t=round(30*t_rel_t) #cas v sekundach
-    T_p=round(35*t_rel_p)
 
-    vysledek_celk1=0 #bude matice, pokud probehne dany vypocet
-    c_u_celk1=0 #bude vektor, pokud probehne dany vypocet
+stop=time.time()
+print('\nSpotrebovany cas celkove: '+str(stop-start))
 
-    #Uloha a)
-    #pp
-    pp_a1=np.zeros(m-j_d+1)
-    #op (puvodni)
-    # pp_a[-1]=c0
-    k_t1,c_u_t1, vysledek_t1,tau_t1=vypocet_CN(T_t,pp_a1,D_t)
-    k_p1,c_u_p1, vysledek_p1,tau_p1=vypocet_CN(T_p,pp_a1,D_p)
-    # k_p1,c_u_p1, vysledek_p1,tau_p1=vypocet_CN(T_t,pp_a1,D_p) #pro animace_obe_D
-
-    #Uloha b)
-    #pp
-    # pp_b=np.zeros(m-j_d+1)+c0
-    #op (puvodni)
-    # pp_b[-1]=0
-    # vysledek_tekute_b=run(pp_b,D_t)
-    # vysledek_pevne_b=run(pp_b,D_p)
-
-    c_u_celk=[c_u_t1, c_u_p1]
-    vysledek_celk=[vysledek_t1, vysledek_p1]
-
-    #Prvni cyklus=NAPLNOVANI
-    animace(vysledek_t1,c_u_t1,c0,tau_t1,k_t1,'tekute', interval=1)
-    animace(vysledek_p1,c_u_p1,c0,tau_p1,k_p1,'pevne', interval=1)
-
-    #SOUHRNA ANIMACE
-    # animace_obe_D(vysledek_celk,c_u_celk,c0,tau_t1, k_t1,interval=1)
-
-    #CN METODA
-    # vysledek_celk=vypocet_CN(pp_a,D_t)
-    # animace(vysledek_celk, pp_a[-1])
-    k=[k_t1, k_p1]
-    t=[k_t1*tau_t1,k_p1*tau_p1]
-    stop=time.time()
-    print('\nSpotrebovany cas celkove: '+str(stop-start))
-    return k,t,c_u_celk, vysledek_celk
-
-if __name__ == "__main__":
-    k,t,c_u_celk, vysledek_celk=main()
-    print
+# if __name__ == "__main__":
+    # t=main()
+    # print
