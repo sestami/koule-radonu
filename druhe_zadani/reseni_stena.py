@@ -58,10 +58,10 @@ print("Argumenty nastaveny na: d="+str(d)+"; k_u="+str(k_u)+"; k_v="+str(k_v))
 m=200 #pocet bodu prostorove site
 # n=int(8/600*T*m*np.log10(R/d*100000)) #pocet bodu casove site
 # n=int(8/600*T*m*np.log10(R/d*10)+(300-c0)/1.5) #pocet bodu casove site
-n=2000 #pocet bodu casove site
+n=10000 #pocet bodu casove site
 h=R/m #prostorovy krok
 
-j_d=round((R-d)/R*m)
+j_d=round((R-d)/R*m) #trojclenka
 j_array = np.linspace(j_d, m, m-j_d+1)
 
 def vypocet_CN(T,c,D,c_u=0,c_v=c0,tolerance=0.01,theta=1/2):
@@ -105,6 +105,7 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,tolerance=0.01,theta=1/2):
         mainDiag = np.zeros(m-j_d+1)
 
         #VNITRNI OKRAJOVA PODMINKA
+        #puvodne vnitrni okrajova podminka nebyla
         # mainDiag[0] = 1 + 6*pom1 + tau*prem_konst*theta
         # superDiag[0] = -6*pom1
         #pred derivaci neni minus
@@ -117,10 +118,10 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,tolerance=0.01,theta=1/2):
         superDiag[1:] = -pom1*(1 + 1/j_array[1:-1])
 
         #VNEJSI OKRAJOVA PODMINKA
-        # mainDiag[-1]=1 #puvodni
+        mainDiag[-1]=1 #Dirichletova
         #pred derivaci neni minus
-        subDiag[-1]= -1
-        mainDiag[-1]= 1 + h*k_v/D
+        # subDiag[-1]= -1 #Neumannova
+        # mainDiag[-1]= 1 + h*k_v/D
 
         return scipy.sparse.diags([subDiag, mainDiag, superDiag], [-1, 0, 1], format='csc')
 
@@ -153,8 +154,8 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,tolerance=0.01,theta=1/2):
         PS[1:-1] = a + b + c
 
         #VNEJSI OKRAJOVA PODMINKA
-        # PS[-1]=cOld[-1] #puvodni
-        PS[-1]= h*k_v/D*c_v
+        PS[-1]=c_v #Dirichletova
+        # PS[-1]= h*k_v/D*c_v #Neumannova
 
         cNew = scipy.sparse.linalg.spsolve(A, PS)
         return c_uNew, cNew
@@ -177,7 +178,7 @@ def vypocet_CN(T,c,D,c_u=0,c_v=c0,tolerance=0.01,theta=1/2):
     print("doba do ustaleni staleho stavu v ramci nastavene tolerance: "+str(k*tau)+" s")
     return k,tau,c_u_vysl,vysledek
 
-def animace(vysledek,c_u, c_v,tau,k,prostredi,interval=1,ulozit=False):
+def animace(vysledek,c_u, c_v,tau,k,prostredi,interval=1,jmeno=0):
     '''
     Inputs:
         vysledek(array)
@@ -231,8 +232,8 @@ def animace(vysledek,c_u, c_v,tau,k,prostredi,interval=1,ulozit=False):
 
     anim = animation.FuncAnimation(fig, animate, np.arange(0, k), init_func=init,
                                 interval=interval, blit=True, repeat=False)
-    if ulozit:
-        anim.save('animace.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
+    if jmeno:
+        anim.save(jmeno+'.mp4', fps=30, extra_args=['-vcodec', 'libx264'])
     plt.show()
 
 def animace_obe_D(vysledek,c_u, c_v,tau,k,interval=1,ulozit=False):
@@ -309,6 +310,22 @@ def urcit_nove_pp(k,c_u,vysledek):
     c_u0=c_u[k]
     return c_u0,pp
 
+
+def graf_uvnitr(k, tau, c_u):
+    '''
+    Input:
+        k_t(int): kam se v casove siti dobehlo (dal se vypocet prerusil)
+        tau(float): casovy krok
+        c_u(array): koncentrace uvnitr v jednotlivych casovych krocich
+    '''
+    t=np.linspace(0,k,num=k+1)
+    t=t*tau
+    plt.plot(t*tau,c_u[0:k+1])
+    plt.xlabel(r'$t$ [s]')
+    plt.ylabel(r'$c_u$ [Bq/m$^3$]')
+    plt.grid()
+    plt.show()
+
 #SKRIPTOVA CAST
 '''
 animace_obe_D NEPOUZIVAT!!!!!!!
@@ -344,7 +361,8 @@ t_p=k_p1*tau_p1+k_p2*tau_p2
 print("\nDoba experimentu pro tekute prostredi: "+str(t_t)+" s; "+str(round(t_t/60,3))+" min; "+str(round(t_t/3600,2))+" hod")
 print("Doba experimentu pro pevne prostredi: "+str(t_p)+" s; "+str(round(t_p/60,3))+" min; "+str(round(t_p/3600,2))+" hod")
 
-
+graf_uvnitr(k_t1,tau_t1,c_u_t1)
+graf_uvnitr(k_t2,tau_t2,c_u_t2)
 stop=time.time()
 print('\nSpotrebovany cas celkove: '+str(stop-start))
 
